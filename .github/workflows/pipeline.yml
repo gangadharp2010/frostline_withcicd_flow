@@ -145,4 +145,17 @@ jobs:
           cluster: frostline-cluster
           service: frostline-api
           wait-for-service-stability: true
+      - name: Verify ECS service stability
+        run: |
+          aws ecs wait services-stable \
+            --cluster frostline-cluster \
+            --services frostline-api \
+            --region us-west-2
+
+          aws ecs describe-services \
+            --cluster frostline-cluster \
+            --services frostline-api \
+            --region us-west-2 \
+            --query 'services[0].[status,deployments[0].rolloutState,deployments[0].runningCount,deployments[0].desiredCount]' \
+            --output table
 
