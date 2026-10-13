@@ -55,11 +55,7 @@ jobs:
       id-token: write
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v7
-
-      # Temporary diagnostic step for OIDC troubleshooting.
-      # Remove it after AWS authentication works.
+      - uses: actions/checkout@v7
       - name: Debug GitHub OIDC claims
         uses: actions/github-script@v7
         with:
@@ -71,7 +67,7 @@ jobs:
             core.info(`iss: ${claims.iss}`);
             core.info(`aud: ${JSON.stringify(claims.aud)}`);
             core.info(`sub: ${claims.sub}`);
-
+            
       - name: Configure AWS credentials using OIDC
         uses: aws-actions/configure-aws-credentials@v6
         with:
