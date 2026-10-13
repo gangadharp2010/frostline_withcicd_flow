@@ -12,7 +12,7 @@ permissions:
 
 jobs:
   test:
-    name: Run Tests
+    
     runs-on: ubuntu-latest
 
     permissions:
@@ -45,7 +45,7 @@ jobs:
           files: test-results.xml
 
   deploy:
-    name: Build and Deploy to AWS
+    name: Checkout repository
     needs: test
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
