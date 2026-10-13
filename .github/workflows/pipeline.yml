@@ -1,3 +1,4 @@
+
 name: Pipeline
 
 on:
@@ -11,24 +12,31 @@ permissions:
 
 jobs:
   test:
+    name: Run Tests
     runs-on: ubuntu-latest
+
     permissions:
       contents: read
       checks: write
       pull-requests: write
 
     steps:
-      - uses: actions/checkout@v7
+      - name: Checkout repository
+        uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v7
+      - name: Set up Python
+        uses: actions/setup-python@v7
         with:
           python-version: "3.12"
 
       - name: Install dependencies
-        run: python -m pip install -r requirements.txt -r requirements-dev.txt
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt -r requirements-dev.txt
 
       - name: Run tests
-        run: python -m pytest -v --junitxml=test-results.xml
+        run: |
+          python -m pytest -v --junitxml=test-results.xml
 
       - name: Publish test results
         if: ${{ !cancelled() }}
@@ -37,9 +45,11 @@ jobs:
           files: test-results.xml
 
   deploy:
+    name: Build and Deploy to AWS
     needs: test
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
+
     permissions:
       contents: read
       id-token: write
@@ -64,24 +74,66 @@ jobs:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: us-west-2
 
+      - name: Verify AWS identity
+        run: aws sts get-caller-identity
+
+      - name: Verify ECS resources
+        run: |
+          aws ecs describe-clusters \
+            --clusters frostline-cluster \
+            --region us-west-2 \
+            --query 'clusters[0].status' \
+            --output text
+
+          aws ecs describe-task-definition \
+            --task-definition frostline \
+            --region us-west-2 \
+            --query 'taskDefinition.family' \
+            --output text
+
       - name: Log in to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Build and push image
+      - name: Build Docker image
         env:
           REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           IMAGE_TAG: ${{ github.sha }}
         run: |
-          docker build --build-arg GIT_SHA="$IMAGE_TAG" \
+          docker build \
+            --build-arg GIT_SHA="$IMAGE_TAG" \
             -t "$REGISTRY/frostline:$IMAGE_TAG" .
+
+      - name: Push Docker image to ECR
+        env:
+          REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
           docker push "$REGISTRY/frostline:$IMAGE_TAG"
+
+      - name: Download current ECS task definition
+        run: |
+          aws ecs describe-task-definition \
+            --task-definition frostline \
+            --region us-west-2 \
+            --query taskDefinition \
+            --output json |
+          jq 'del(
+            .taskDefinitionArn,
+            .revision,
+            .status,
+            .requiresAttributes,
+            .compatibilities,
+            .registeredAt,
+            .registeredBy,
+            .deregisteredAt
+          )' > task-definition.json
 
       - name: Render ECS task definition
         id: render-task
         uses: aws-actions/amazon-ecs-render-task-definition@v1
         with:
-          task-definition-family: frostline
+          task-definition: task-definition.json
           container-name: frostline
           image: ${{ steps.login-ecr.outputs.registry }}/frostline:${{ github.sha }}
 
@@ -92,3 +144,4 @@ jobs:
           cluster: frostline-cluster
           service: frostline-api
           wait-for-service-stability: true
+
